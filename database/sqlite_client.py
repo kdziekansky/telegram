@@ -714,6 +714,20 @@ def create_reminder(user_id, content, remind_at):
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
+        # Upewnij się, że tabela istnieje
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS reminders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            remind_at TEXT NOT NULL,
+            created_at TEXT,
+            is_completed INTEGER DEFAULT 0,
+            completed_at TEXT
+        )
+        ''')
+        conn.commit()
+        
         now = datetime.datetime.now(pytz.UTC).isoformat()
         remind_at_iso = remind_at.isoformat()
         
@@ -744,7 +758,7 @@ def create_reminder(user_id, content, remind_at):
         return None
     except Exception as e:
         logger.error(f"Błąd przy tworzeniu przypomnienia: {e}")
-        if 'conn' in locals():
+        if 'conn' in locals() and conn:
             conn.close()
         return None
 

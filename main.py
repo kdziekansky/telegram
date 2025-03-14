@@ -315,7 +315,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Określ model do użycia - domyślny lub z trybu czatu
     model_to_use = CHAT_MODES[current_mode].get("model", DEFAULT_MODEL)
     
-    # Jeśli użytkownik wybrał konkretny model, użyj go
+# Jeśli użytkownik wybrał konkretny model, użyj go
     if 'user_data' in context.chat_data and user_id in context.chat_data['user_data']:
         user_data = context.chat_data['user_data'][user_id]
         if 'current_model' in user_data:
@@ -323,8 +323,12 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Aktualizuj koszt kredytów na podstawie modelu
             credit_cost = CREDIT_COSTS["message"].get(model_to_use, CREDIT_COSTS["message"]["default"])
     
-    # Przygotuj system prompt z wybranego trybu
+    # Przygotuj system prompt z wybranego trybu - z uwzględnieniem języka
     system_prompt = CHAT_MODES[current_mode]["prompt"]
+    if language == 'en' and 'prompt_en' in CHAT_MODES[current_mode]:
+        system_prompt = CHAT_MODES[current_mode]["prompt_en"]
+    elif language == 'ru' and 'prompt_ru' in CHAT_MODES[current_mode]:
+        system_prompt = CHAT_MODES[current_mode]["prompt_ru"]
     
     # Przygotuj wiadomości dla API OpenAI
     messages = prepare_messages_from_history(history, user_message, system_prompt)

@@ -38,30 +38,59 @@ def generate_conversation_pdf(conversation, user_info, bot_name="AI Bot"):
         name='UserMessage',
         parent=styles['Normal'],
         fontName='Helvetica-Bold',
-        spaceAfter=6
+        fontSize=10,
+        spaceAfter=10,
+        leading=14
     ))
     styles.add(ParagraphStyle(
         name='BotMessage',
         parent=styles['Normal'],
         fontName='Helvetica',
+        fontSize=10,
         leftIndent=20,
-        spaceAfter=12
+        spaceAfter=14,
+        leading=14
+    ))
+    styles.add(ParagraphStyle(
+        name='Title',
+        parent=styles['Title'],
+        fontSize=18,
+        alignment=1,
+        spaceAfter=14
+    ))
+    styles.add(ParagraphStyle(
+        name='Heading2',
+        parent=styles['Heading2'],
+        fontSize=14,
+        spaceAfter=10
+    ))
+    styles.add(ParagraphStyle(
+        name='Footer',
+        parent=styles['Normal'],
+        fontSize=8,
+        textColor=colors.gray,
+        alignment=1
     ))
     
     # Elementy dokumentu
     elements = []
     
     # Nagłówek
-    title = f"Konwersacja z {bot_name}"
-    elements.append(Paragraph(title, styles['Title']))
+    elements.append(Paragraph(f"Konwersacja z {bot_name}", styles['Title']))
     
     # Metadane
     current_time = datetime.datetime.now().strftime("%d-%m-%Y %H:%M")
-    metadata_text = f"Eksportowano: {current_time}"
+    metadata_text = f"Data eksportu: {current_time}"
     if user_info.get('username'):
-        metadata_text += f"<br/>Użytkownik: {user_info.get('username')}"
+        metadata_text += f" | Użytkownik: {user_info.get('username')}"
+    if user_info.get('first_name'):
+        name = user_info.get('first_name')
+        if user_info.get('last_name'):
+            name += f" {user_info.get('last_name')}"
+        metadata_text += f" | Imię: {name}"
+    
     elements.append(Paragraph(metadata_text, styles['Italic']))
-    elements.append(Spacer(1, 0.5*cm))
+    elements.append(Spacer(1, 0.8*cm))
     
     # Treść konwersacji
     for msg in conversation:
@@ -81,7 +110,7 @@ def generate_conversation_pdf(conversation, user_info, bot_name="AI Bot"):
                 if isinstance(msg['created_at'], str) and 'T' in msg['created_at']:
                     dt = datetime.datetime.fromisoformat(msg['created_at'].replace('Z', '+00:00'))
                     time_str = dt.strftime("%d-%m-%Y %H:%M")
-                    content += f"<br/><font size=8 color=gray>{time_str}</font>"
+                    content += f"<br/><font size=7 color=gray>{time_str}</font>"
             except Exception as e:
                 # Ignoruj błędy konwersji daty
                 pass
@@ -89,9 +118,9 @@ def generate_conversation_pdf(conversation, user_info, bot_name="AI Bot"):
         elements.append(Paragraph(content, style))
     
     # Stopka
-    elements.append(Spacer(1, 1*cm))
+    elements.append(Spacer(1, 1.5*cm))
     footer_text = f"Wygenerowano przez {bot_name} • {current_time}"
-    elements.append(Paragraph(footer_text, styles['Italic']))
+    elements.append(Paragraph(footer_text, styles['Footer']))
     
     # Wygeneruj dokument
     doc.build(elements)

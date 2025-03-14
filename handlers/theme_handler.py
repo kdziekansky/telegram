@@ -23,7 +23,23 @@ async def theme_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await create_new_theme(update, context, theme_name)
         return
     
-    # W przeciwnym razie wyświetl listę tematów
+    # W przeciwnym razie wyświetl listę tematów wraz z instrukcją
+    help_text = (
+        "🔹 *Tematy konwersacji* 🔹\n\n"
+        "Tematy pozwalają organizować rozmowy w oddzielne kategorie, na przykład:\n"
+        "• Praca\n"
+        "• Nauka języka angielskiego\n"
+        "• Projekt stronę www\n\n"
+        "Aby *utworzyć nowy temat*, użyj komendy:\n"
+        "`/theme [nazwa_tematu]`\n\n"
+        "Aby *przełączyć się na rozmowę bez tematu*, użyj komendy:\n"
+        "`/notheme`\n\n"
+        "Poniżej znajduje się lista Twoich tematów:"
+    )
+    
+    await update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN)
+    
+    # Wyświetl listę istniejących tematów
     await show_themes_list(update, context)
 
 async def create_new_theme(update: Update, context: ContextTypes.DEFAULT_TYPE, theme_name):

@@ -20,9 +20,16 @@ async def show_modes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Utwórz przyciski dla dostępnych trybów
     keyboard = []
     for mode_id, mode_info in CHAT_MODES.items():
+        # Wybierz nazwę w odpowiednim języku
+        mode_name = mode_info['name']
+        if language == 'en' and 'name_en' in mode_info:
+            mode_name = mode_info['name_en']
+        elif language == 'ru' and 'name_ru' in mode_info:
+            mode_name = mode_info['name_ru']
+            
         keyboard.append([
             InlineKeyboardButton(
-                text=f"{mode_info['name']} ({mode_info['credit_cost']} kredyt(ów))", 
+                text=f"{mode_name} ({mode_info['credit_cost']} kredyt(ów))", 
                 callback_data=f"mode_{mode_id}"
             )
         ])
@@ -64,8 +71,20 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
         if "model" in CHAT_MODES[mode_id]:
             context.chat_data['user_data'][user_id]['current_model'] = CHAT_MODES[mode_id]["model"]
         
+        # Wybierz nazwę i opis w odpowiednim języku
         mode_name = CHAT_MODES[mode_id]["name"]
+        if language == 'en' and 'name_en' in CHAT_MODES[mode_id]:
+            mode_name = CHAT_MODES[mode_id]["name_en"]
+        elif language == 'ru' and 'name_ru' in CHAT_MODES[mode_id]:
+            mode_name = CHAT_MODES[mode_id]["name_ru"]
+            
+        # Wybierz opis w odpowiednim języku
         mode_description = CHAT_MODES[mode_id]["prompt"]
+        if language == 'en' and 'prompt_en' in CHAT_MODES[mode_id]:
+            mode_description = CHAT_MODES[mode_id]["prompt_en"]
+        elif language == 'ru' and 'prompt_ru' in CHAT_MODES[mode_id]:
+            mode_description = CHAT_MODES[mode_id]["prompt_ru"]
+            
         credit_cost = CHAT_MODES[mode_id]["credit_cost"]
         
         # Skróć opis, jeśli jest zbyt długi

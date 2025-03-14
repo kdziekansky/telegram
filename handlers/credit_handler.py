@@ -89,6 +89,11 @@ async def buy_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     language = get_user_language(context, user_id)
     
+    # Check if user wants to buy with stars
+    if context.args and len(context.args) > 0 and context.args[0].lower() == "stars":
+        await show_stars_purchase_options(update, context)
+        return
+    
     # Check if package number is specified
     if context.args and len(context.args) > 0:
         try:
@@ -115,6 +120,11 @@ async def buy_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 callback_data=f"buy_package_{pkg['id']}"
             )
         ])
+    
+    # Add button for star purchases
+    keyboard.append([
+        InlineKeyboardButton("⭐ Buy with Telegram Stars", callback_data="show_stars_options")
+    ])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -161,6 +171,17 @@ async def handle_credit_callback(update: Update, context: ContextTypes.DEFAULT_T
     user_id = query.from_user.id
     language = get_user_language(context, user_id)
     
+    # Handle star options button
+    if query.data == "show_stars_options":
+        await show_stars_purchase_options(update, context)
+        return
+    
+    # Handle star purchase buttons
+    if query.data.startswith("buy_stars_"):
+        stars_amount = int(query.data.split("_")[2])
+        await process_stars_purchase(update, context, stars_amount)
+        return
+    
     if query.data == "buy_credits":
         # Redirect to the buy command
         packages = get_credit_packages()
@@ -178,6 +199,11 @@ async def handle_credit_callback(update: Update, context: ContextTypes.DEFAULT_T
                     callback_data=f"buy_package_{pkg['id']}"
                 )
             ])
+        
+        # Add button for star purchases
+        keyboard.append([
+            InlineKeyboardButton("⭐ Buy with Telegram Stars", callback_data="show_stars_options")
+        ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
