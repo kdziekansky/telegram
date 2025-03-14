@@ -130,7 +130,7 @@ if __name__ == "__main__":
     else:
         print("Wystąpił błąd podczas aktualizacji. Sprawdź logi.")
 
-    def run_all_updates():
+def run_all_updates():
     """
     Uruchamia wszystkie funkcje aktualizujące bazę danych
     """

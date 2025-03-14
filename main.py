@@ -735,6 +735,18 @@ Dostępne kredyty: *{credits}*
 def main():
     """Funkcja uruchamiająca bota"""
     # Inicjalizacja aplikacji
+        # Dodaj te linie na początku funkcji main() dla debugowania
+    print(f"TELEGRAM_TOKEN = {TELEGRAM_TOKEN}")
+    
+    if not TELEGRAM_TOKEN or TELEGRAM_TOKEN == "None":
+        # Token nie został załadowany z pliku .env
+        print("UWAGA: Token Telegram nie został załadowany z pliku .env!")
+        print("Sprawdź, czy plik .env istnieje i zawiera poprawną linię TELEGRAM_TOKEN=twój_token")
+        return
+        
+    # Inicjalizacja aplikacji
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    # ... reszta kodu ...
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
     # Dodanie handlerów komend

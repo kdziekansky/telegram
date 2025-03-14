@@ -1,13 +1,25 @@
-python-telegram-bot==20.7
+# Podstawowe zależności
+python-telegram-bot==20.7  # UWAGA: Nie kompatybilne z Python 3.13+
 openai==1.12.0
-supabase==2.3.0
 python-dotenv==1.0.0
+requests==2.31.0
+
+# Formatowanie czasu i dat
 pytz==2023.3
 tzlocal==5.2
 apscheduler==3.10.1
+
+# Obsługa plików i obrazów
 pillow>=9.5.0
-requests==2.31.0
 reportlab==4.0.4
-matplotlib==3.8.2
-numpy==1.26.2
-pandas==2.1.3
+
+# Aplikacja webowa
+flask==3.0.0
+
+# Obsługa baz danych
+supabase==2.3.0  # Opcjonalna - używana tylko z Supabase
+
+# Analiza danych i wizualizacja (opcjonalna)
+matplotlib==3.8.2  # Opcjonalna - używana do wizualizacji statystyk
+numpy==1.24.3      # Opcjonalna - używana do analizy danych
+pandas==2.0.3      # Opcjonalna - używana do analizy danych
