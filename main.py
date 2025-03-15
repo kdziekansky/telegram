@@ -68,6 +68,9 @@ from handlers.reminder_handler import remind_command, reminders_command, handle_
 from handlers.note_handler import note_command, notes_command, handle_note_callback
 from utils.credit_analytics import generate_credit_usage_chart, generate_usage_breakdown_chart
 
+# Import nowego systemu menu
+from handlers.menu_system import handle_menu_callback
+
 # Konfiguracja loggera
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -143,7 +146,11 @@ async def restart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Dodaj informację o restarcie bota
     restart_text += f"\n\n{get_text('language_restart_complete', language, language_display=language_name)}"
     
-    await update.message.reply_text(restart_text, parse_mode=ParseMode.MARKDOWN)
+    # Dodaj menu inline
+    from handlers.menu_system import build_main_menu
+    reply_markup = build_main_menu(language)
+    
+    await update.message.reply_text(restart_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
     
     # Pokaż menu główne
     await show_main_menu(update, context)
@@ -193,7 +200,11 @@ Koszty operacji:
 Aby dokupić więcej kredytów, użyj komendy /buy.
 """
     
-    await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+    # Dodajemy menu inline
+    from handlers.menu_system import build_account_menu
+    reply_markup = build_account_menu(language)
+    
+    await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
 
 async def new_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Rozpoczyna nową konwersację"""
@@ -231,6 +242,12 @@ async def show_models(update: Update, context: ContextTypes.DEFAULT_TYPE, edit_m
             )
         ])
     
+    # Dodaj przycisk powrotu
+    keyboard.append([
+        InlineKeyboardButton("🔙 " + get_text("back_button", language, default="Wstecz"), 
+                             callback_data="menu_back_to_settings")
+    ])
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     if edit_message and callback_query:
@@ -258,18 +275,32 @@ async def show_modes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Utwórz przyciski dla dostępnych trybów
     keyboard = []
     for mode_id, mode_info in CHAT_MODES.items():
+        # Wybierz nazwę w odpowiednim języku
+        mode_name = mode_info['name']
+        if language == 'en' and 'name_en' in mode_info:
+            mode_name = mode_info['name_en']
+        elif language == 'ru' and 'name_ru' in mode_info:
+            mode_name = mode_info['name_ru']
+        
         keyboard.append([
             InlineKeyboardButton(
-                text=f"{mode_info['name']} ({mode_info['credit_cost']} kredyt(ów))", 
-                callback_data=f"mode_{mode_id}"
+                text=f"{mode_name} ({mode_info['credit_cost']} kredyt(ów))", 
+                callback_data=f"menu_action_set_mode_{mode_id}"
             )
         ])
+    
+    # Dodaj przycisk powrotu
+    keyboard.append([
+        InlineKeyboardButton("🔙 " + get_text("back_button", language, default="Wstecz"), 
+                             callback_data="menu_back_to_main")
+    ])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        get_text("settings_choose_model", language),
-        reply_markup=reply_markup
+        get_text("chat_modes_explanation", language, default="Wybierz tryb czatu, którego chcesz użyć:"),
+        reply_markup=reply_markup,
+        parse_mode=ParseMode.MARKDOWN
     )
 
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -374,8 +405,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     credits = get_user_credits(user_id)
     if credits < 5:
         await update.message.reply_text(
-            f"*Uwaga:* Pozostało Ci tylko *{credits}* kredytów. "
-            f"Kup więcej za pomocą komendy /buy.",
+            f"*{get_text('low_credits_warning', language, default='Uwaga:')}* {get_text('low_credits_message', language, default=f'Pozostało Ci tylko *{credits}* kredytów. Kup więcej za pomocą komendy /buy.', credits=credits)}",
             parse_mode=ParseMode.MARKDOWN
         )
 
@@ -423,8 +453,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     credits = get_user_credits(user_id)
     if credits < 5:
         await update.message.reply_text(
-            f"*Uwaga:* Pozostało Ci tylko *{credits}* kredytów. "
-            f"Kup więcej za pomocą komendy /buy.",
+            f"*{get_text('low_credits_warning', language, default='Uwaga:')}* {get_text('low_credits_message', language, default=f'Pozostało Ci tylko *{credits}* kredytów. Kup więcej za pomocą komendy /buy.', credits=credits)}",
             parse_mode=ParseMode.MARKDOWN
         )
 
@@ -467,8 +496,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     credits = get_user_credits(user_id)
     if credits < 5:
         await update.message.reply_text(
-            f"*Uwaga:* Pozostało Ci tylko *{credits}* kredytów. "
-            f"Kup więcej za pomocą komendy /buy.",
+            f"*{get_text('low_credits_warning', language, default='Uwaga:')}* {get_text('low_credits_message', language, default=f'Pozostało Ci tylko *{credits}* kredytów. Kup więcej za pomocą komendy /buy.', credits=credits)}",
             parse_mode=ParseMode.MARKDOWN
         )
 
@@ -484,42 +512,19 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     user_id = query.from_user.id
     language = get_user_language(context, user_id)
     
-    # Utworzenie sztucznego obiektu update dla komend menu
-    class FakeUpdate:
-        class FakeMessage:
-            def __init__(self, chat_id, message_id):
-                self.chat_id = chat_id
-                self.message_id = message_id
-                
-            async def reply_text(self, text, **kwargs):
-                return await context.bot.send_message(
-                    chat_id=self.chat_id,
-                    text=text,
-                    **kwargs
-                )
-        
-        def __init__(self, message, user):
-            self.message = message
-            self.effective_user = user
-    
-    # Funkcja pomocnicza do tworzenia fałszywego update'a
-    def create_fake_update():
-        fake_message = FakeUpdate.FakeMessage(query.message.chat_id, query.message.message_id)
-        return FakeUpdate(fake_message, query.from_user)
-    
     # Obsługa przycisków menu inline
     if query.data == "menu_mode":
-        await show_modes(create_fake_update(), context)
+        await show_modes(create_fake_update(query), context)
     elif query.data == "menu_newchat":
-        await new_chat(create_fake_update(), context)
+        await new_chat(create_fake_update(query), context)
     elif query.data == "menu_notes":
-        await notes_command(create_fake_update(), context)
+        await notes_command(create_fake_update(query), context)
     elif query.data == "menu_reminders":
-        await reminders_command(create_fake_update(), context)
+        await reminders_command(create_fake_update(query), context)
     elif query.data == "menu_credits":
-        await credits_command(create_fake_update(), context)
+        await credits_command(create_fake_update(query), context)
     elif query.data == "menu_status":
-        await check_status(create_fake_update(), context)
+        await check_status(create_fake_update(query), context)
     
     # Obsługa przycisku restartu bota
     elif query.data == "restart_bot":
@@ -554,7 +559,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await query.message.reply_text(restart_complete, parse_mode=ParseMode.MARKDOWN)
         
         # Pokaż menu główne
-        await show_main_menu(create_fake_update(), context)
+        await show_main_menu(create_fake_update(query), context)
         return
     
     # Obsługa callbacków języka przy pierwszym uruchomieniu
@@ -591,6 +596,26 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     # Obsługa przycisków notatek
     elif query.data.startswith("note_") or query.data == "new_note":
         await handle_note_callback(update, context)
+
+def create_fake_update(query):
+    """Helper function to create a fake update for buttons"""
+    class FakeUpdate:
+        class FakeMessage:
+            def __init__(self, chat_id, message_id):
+                self.chat_id = chat_id
+                self.message_id = message_id
+                self.chat = type('obj', (object,), {'id': chat_id, 'send_action': query.message.chat.send_action})
+                
+            async def reply_text(self, text, **kwargs):
+                return await query.message.reply_text(text, **kwargs)
+        
+        def __init__(self, message, user):
+            self.message = message
+            self.effective_user = user
+            self.effective_chat = query.message.chat
+    
+    fake_message = FakeUpdate.FakeMessage(query.message.chat_id, query.message.message_id)
+    return FakeUpdate(fake_message, query.from_user)
 
 async def handle_model_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, model_id):
     """Obsługa wyboru modelu AI"""
@@ -645,15 +670,26 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
     if "model" in CHAT_MODES[mode_id]:
         context.chat_data['user_data'][user_id]['current_model'] = CHAT_MODES[mode_id]["model"]
     
+    # Wybierz nazwę w odpowiednim języku
     mode_name = CHAT_MODES[mode_id]["name"]
-    mode_description = CHAT_MODES[mode_id]["prompt"]
+    if language == 'en' and 'name_en' in CHAT_MODES[mode_id]:
+        mode_name = CHAT_MODES[mode_id]["name_en"]
+    elif language == 'ru' and 'name_ru' in CHAT_MODES[mode_id]:
+        mode_name = CHAT_MODES[mode_id]["name_ru"]
+    
     credit_cost = CHAT_MODES[mode_id]["credit_cost"]
     
     # Skróć opis, jeśli jest zbyt długi
-    if len(mode_description) > 100:
-        short_description = mode_description[:97] + "..."
+    prompt = CHAT_MODES[mode_id]["prompt"]
+    if language == 'en' and 'prompt_en' in CHAT_MODES[mode_id]:
+        prompt = CHAT_MODES[mode_id]["prompt_en"]
+    elif language == 'ru' and 'prompt_ru' in CHAT_MODES[mode_id]:
+        prompt = CHAT_MODES[mode_id]["prompt_ru"]
+    
+    if len(prompt) > 100:
+        short_description = prompt[:97] + "..."
     else:
-        short_description = mode_description
+        short_description = prompt
     
     await query.edit_message_text(
         f"Wybrany tryb: *{mode_name}*\n"
@@ -752,6 +788,7 @@ Nazwa użytkownika: {user.get('username', 'Brak')}
 Imię: {user.get('first_name', 'Brak')}
 Nazwisko: {user.get('last_name', 'Brak')}
 Język: {user.get('language_code', 'Brak')}
+Wybrany język: {user.get('selected_language', 'Brak')}
 Subskrypcja do: {subscription_end}
 Aktywny: {'Tak' if user.get('is_active', False) else 'Nie'}
 Data rejestracji: {user.get('created_at', 'Brak')}
@@ -783,7 +820,11 @@ async def onboarding_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     message += "💰 **System kredytów** - Do korzystania z moich funkcji potrzebujesz kredytów. Sprawdź stan komendą /credits, a kupisz więcej przez /buy.\n\n"
     message += "Jak mogę Ci pomóc dzisiaj? Możesz po prostu wpisać swoje pytanie lub użyć jednej z komend."
     
-    await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+    # Dodaj menu inline
+    from handlers.menu_system import build_main_menu
+    reply_markup = build_main_menu(language)
+    
+    await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
 
 # Obsługa błędów
 def error_handler(update, context):
@@ -852,6 +893,9 @@ def main():
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     
     # Dodanie handlera zapytań zwrotnych (z przycisków)
+    application.add_handler(CallbackQueryHandler(handle_menu_callback, pattern="^menu_"))
+    
+    # Dodanie handlera dla pozostałych callbacków
     application.add_handler(CallbackQueryHandler(handle_callback_query))
     
     # Dodanie handlera wiadomości tekstowych (musi być na końcu)

@@ -149,3 +149,72 @@ def run_all_updates():
     
     logger.info("Zakończono pełną aktualizację bazy danych")
     return update_result
+
+def update_database_language_column():
+    """
+    Aktualizuje schemat bazy danych, dodając kolumnę selected_language
+    do tabeli users.
+    """
+    import sqlite3
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    DB_PATH = "bot_database.sqlite"
+    
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Sprawdź, czy kolumna już istnieje
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [column[1] for column in cursor.fetchall()]
+        
+        if 'selected_language' not in columns:
+            logger.info("Dodaję kolumnę selected_language do tabeli users")
+            cursor.execute("ALTER TABLE users ADD COLUMN selected_language TEXT")
+            
+            # Dla istniejących użytkowników skopiuj wartość z language_code jako punkt startowy
+            cursor.execute("UPDATE users SET selected_language = language_code WHERE language_code IS NOT NULL")
+            
+            conn.commit()
+            logger.info("Kolumna selected_language została dodana pomyślnie")
+        else:
+            logger.info("Kolumna selected_language już istnieje w tabeli users")
+        
+        conn.close()
+        return True
+    except Exception as e:
+        logger.error(f"Błąd podczas aktualizacji schematu bazy danych: {e}")
+        if 'conn' in locals():
+            conn.close()
+        return False
+
+# Dodaj tę funkcję do run_all_updates
+def run_all_updates():
+    """
+    Uruchamia wszystkie funkcje aktualizujące bazę danych
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("Rozpoczynam pełną aktualizację bazy danych")
+    
+    # Aktualizacja tabel kredytów
+    update_result = update_database_credits()
+    
+    # Aktualizacja kolumny języka
+    language_result = update_database_language_column()
+    
+    # Inicjalizacja tabel tematów konwersacji
+    from database.sqlite_client import init_themes_table
+    init_themes_table()
+    
+    # Inicjalizacja tabel przypomnień i notatek
+    from database.sqlite_client import init_reminders_notes_tables
+    init_reminders_notes_tables()
+    
+    logger.info("Zakończono pełną aktualizację bazy danych")
+    return update_result and language_result
+
+if __name__ == "__main__":
+    print("Rozpoczynam aktualizację schematu bazy danych...")
+    update_database_language_column()
+    print("Aktualizacja zakończona pomyślnie!")

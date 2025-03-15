@@ -58,7 +58,8 @@ def get_user_language(context, user_id):
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        cursor.execute("SELECT language_code FROM users WHERE id = ?", (user_id,))
+        # Zmieniamy z language_code na selected_language - to jest kluczowa zmiana
+        cursor.execute("SELECT selected_language FROM users WHERE id = ?", (user_id,))
         result = cursor.fetchone()
         conn.close()
         
@@ -76,7 +77,7 @@ def get_user_language(context, user_id):
         print(f"Błąd pobierania języka z bazy: {e}")
     
     # Domyślny język, jeśli nie znaleziono w bazie
-    return "pl"
+    return None  # Zwracamy None zamiast "pl", żeby wymusić wybór języka
 
 async def handle_language_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -92,13 +93,23 @@ async def handle_language_selection(update: Update, context: ContextTypes.DEFAUL
     
     print(f"Obsługa wyboru języka: użytkownik {user_id} wybrał język {language}")
     
-    # Zapisz język w bazie danych
+    # Zapisz język w bazie danych - w kolumnie selected_language
     try:
         from database.sqlite_client import sqlite3, DB_PATH
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        cursor.execute("UPDATE users SET language_code = ? WHERE id = ?", (language, user_id))
+        # Sprawdź, czy użytkownik istnieje
+        cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
+        user_exists = cursor.fetchone()
+        
+        if user_exists:
+            # Aktualizuj istniejącego użytkownika
+            cursor.execute("UPDATE users SET selected_language = ? WHERE id = ?", (language, user_id))
+        else:
+            # Dodaj nowego użytkownika (to też powinno być obsłużone przez get_or_create_user)
+            cursor.execute("INSERT INTO users (id, selected_language) VALUES (?, ?)", (user_id, language))
+        
         conn.commit()
         conn.close()
         print(f"Język {language} zapisany w bazie danych dla użytkownika {user_id}")
@@ -121,22 +132,8 @@ async def handle_language_selection(update: Update, context: ContextTypes.DEFAUL
     welcome_text = get_text("welcome_message", language, bot_name=BOT_NAME, credits=credits)
     
     # Dodajemy menu inline do wiadomości powitalnej
-    keyboard = [
-        [
-            InlineKeyboardButton("🔄 Wybierz tryb czatu", callback_data="menu_mode"),
-            InlineKeyboardButton("🆕 Nowa rozmowa", callback_data="menu_newchat")
-        ],
-        [
-            InlineKeyboardButton("📝 Notatki", callback_data="menu_notes"),
-            InlineKeyboardButton("⏰ Przypomnienia", callback_data="menu_reminders")
-        ],
-        [
-            InlineKeyboardButton("💰 Kredyty", callback_data="menu_credits"),
-            InlineKeyboardButton("📊 Status konta", callback_data="menu_status")
-        ]
-    ]
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    from handlers.menu_system import build_main_menu
+    reply_markup = build_main_menu(language)
     
     try:
         # Aktualizuj wiadomość
@@ -155,9 +152,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Tworzy lub pobiera użytkownika z bazy danych i wyświetla wiadomość powitalną
     """
     user = update.effective_user
-    language = "pl"  # Domyślny język
     
-    # Sprawdź, czy użytkownik ma już ustawiony język w bazie
+    # Pobierz lub utwórz użytkownika w bazie danych
     user_data = get_or_create_user(
         user_id=user.id,
         username=user.username,
@@ -165,9 +161,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         last_name=user.last_name,
         language_code=user.language_code
     )
-    
-    if user_data and 'language_code' in user_data and user_data['language_code']:
-        language = user_data['language_code']
     
     # Sprawdź, czy istnieje kod referencyjny w argumencie start
     if context.args and len(context.args) > 0:
@@ -179,14 +172,29 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             success, referrer_id = use_referral_code(user.id, ref_code)
             
             if success:
-                # Dodaj kredyty dla obu stron (zaimplementowane w prawdziwym use_referral_code)
+                # Używamy domyślnego języka dla komunikatu o kodzie referencyjnym
                 await update.message.reply_text(
-                    get_text("referral_success", language, credits=25),
+                    get_text("referral_success", "pl", credits=25),
                     parse_mode=ParseMode.MARKDOWN
                 )
     
-    # Jeśli użytkownik nie ma jeszcze języka, zaproponuj wybór
-    if not user_data or 'language_code' not in user_data or not user_data['language_code']:
+    # Pobierz język z bazy danych - z kolumny selected_language
+    selected_language = None
+    try:
+        from database.sqlite_client import sqlite3, DB_PATH
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT selected_language FROM users WHERE id = ?", (user.id,))
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result and result[0]:
+            selected_language = result[0]
+    except Exception as e:
+        print(f"Błąd pobierania języka z bazy: {e}")
+    
+    # Jeśli użytkownik nie ma jeszcze wybranego języka, pokaż wybór języka
+    if not selected_language:
         return await show_language_selection(update, context)
     
     # Zapisz język w kontekście
@@ -196,31 +204,17 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user.id not in context.chat_data['user_data']:
         context.chat_data['user_data'][user.id] = {}
     
-    context.chat_data['user_data'][user.id]['language'] = language
+    context.chat_data['user_data'][user.id]['language'] = selected_language
     
     # Pobierz stan kredytów
     credits = get_user_credits(user.id)
     
     # Przygotowanie wiadomości powitalnej
-    welcome_text = get_text("welcome_message", language, bot_name=BOT_NAME, credits=credits)
+    welcome_text = get_text("welcome_message", selected_language, bot_name=BOT_NAME, credits=credits)
     
     # Dodajemy menu inline do wiadomości powitalnej
-    keyboard = [
-        [
-            InlineKeyboardButton("🔄 Wybierz tryb czatu", callback_data="menu_mode"),
-            InlineKeyboardButton("🆕 Nowa rozmowa", callback_data="menu_newchat")
-        ],
-        [
-            InlineKeyboardButton("📝 Notatki", callback_data="menu_notes"),
-            InlineKeyboardButton("⏰ Przypomnienia", callback_data="menu_reminders")
-        ],
-        [
-            InlineKeyboardButton("💰 Kredyty", callback_data="menu_credits"),
-            InlineKeyboardButton("📊 Status konta", callback_data="menu_status")
-        ]
-    ]
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    from handlers.menu_system import build_main_menu
+    reply_markup = build_main_menu(selected_language)
     
     await update.message.reply_text(
         welcome_text, 
