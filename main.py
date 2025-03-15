@@ -34,7 +34,7 @@ from database.credits_client import (
 # Import handlerów kredytów
 from handlers.credit_handler import (
     credits_command, buy_command, handle_credit_callback,
-    credit_stats_command, credit_analytics_command  # Add this function
+    credit_stats_command
 )
 
 # Import handlerów kodu aktywacyjnego
@@ -67,7 +67,6 @@ from handlers.theme_handler import theme_command, notheme_command, handle_theme_
 from handlers.reminder_handler import remind_command, reminders_command, handle_reminder_callback, check_due_reminders
 from handlers.note_handler import note_command, notes_command, handle_note_callback
 from utils.credit_analytics import generate_credit_usage_chart, generate_usage_breakdown_chart
-
 
 # Konfiguracja loggera
 logging.basicConfig(
@@ -184,12 +183,12 @@ Dostępne kredyty: *{credits}*
 Aktualny tryb: *{current_mode}* (koszt: {current_mode_cost} kredyt(ów) za wiadomość)
 
 Koszty operacji:
-• Standardowa wiadomość (GPT-3.5): 1 kredyt
-• Wiadomość Premium (GPT-4o): 3 kredyty
-• Wiadomość Ekspercka (GPT-4): 5 kredytów
-• Obraz DALL-E: 10-15 kredytów
-• Analiza dokumentu: 5 kredytów
-• Analiza zdjęcia: 8 kredytów
+- Standardowa wiadomość (GPT-3.5): 1 kredyt
+- Wiadomość Premium (GPT-4o): 3 kredyty
+- Wiadomość Ekspercka (GPT-4): 5 kredytów
+- Obraz DALL-E: 10-15 kredytów
+- Analiza dokumentu: 5 kredytów
+- Analiza zdjęcia: 8 kredytów
 
 Aby dokupić więcej kredytów, użyj komendy /buy.
 """
@@ -315,7 +314,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Określ model do użycia - domyślny lub z trybu czatu
     model_to_use = CHAT_MODES[current_mode].get("model", DEFAULT_MODEL)
     
-# Jeśli użytkownik wybrał konkretny model, użyj go
+    # Jeśli użytkownik wybrał konkretny model, użyj go
     if 'user_data' in context.chat_data and user_id in context.chat_data['user_data']:
         user_data = context.chat_data['user_data'][user_id]
         if 'current_model' in user_data:
@@ -473,18 +472,57 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.MARKDOWN
         )
 
-# Handlers dla przycisków i callbacków
-
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Obsługa zapytań zwrotnych (z przycisków)"""
     query = update.callback_query
+    
+    # Dodaj to debugowanie na początku funkcji handle_callback_query
+    print(f"Otrzymano callback: {query.data}")
+    
     await query.answer()  # Odpowiedz na callback_query, aby usunąć "zegar oczekiwania"
     
     user_id = query.from_user.id
     language = get_user_language(context, user_id)
     
+    # Utworzenie sztucznego obiektu update dla komend menu
+    class FakeUpdate:
+        class FakeMessage:
+            def __init__(self, chat_id, message_id):
+                self.chat_id = chat_id
+                self.message_id = message_id
+                
+            async def reply_text(self, text, **kwargs):
+                return await context.bot.send_message(
+                    chat_id=self.chat_id,
+                    text=text,
+                    **kwargs
+                )
+        
+        def __init__(self, message, user):
+            self.message = message
+            self.effective_user = user
+    
+    # Funkcja pomocnicza do tworzenia fałszywego update'a
+    def create_fake_update():
+        fake_message = FakeUpdate.FakeMessage(query.message.chat_id, query.message.message_id)
+        return FakeUpdate(fake_message, query.from_user)
+    
+    # Obsługa przycisków menu inline
+    if query.data == "menu_mode":
+        await show_modes(create_fake_update(), context)
+    elif query.data == "menu_newchat":
+        await new_chat(create_fake_update(), context)
+    elif query.data == "menu_notes":
+        await notes_command(create_fake_update(), context)
+    elif query.data == "menu_reminders":
+        await reminders_command(create_fake_update(), context)
+    elif query.data == "menu_credits":
+        await credits_command(create_fake_update(), context)
+    elif query.data == "menu_status":
+        await check_status(create_fake_update(), context)
+    
     # Obsługa przycisku restartu bota
-    if query.data == "restart_bot":
+    elif query.data == "restart_bot":
         restart_message = get_text("restarting_bot", language)
         await query.edit_message_text(restart_message)
         
@@ -516,33 +554,16 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await query.message.reply_text(restart_complete, parse_mode=ParseMode.MARKDOWN)
         
         # Pokaż menu główne
-        from handlers.menu_handler import show_main_menu
-        
-        # Utwórz sztuczny obiekt update do wyświetlenia menu
-        class FakeUpdate:
-            class FakeMessage:
-                def __init__(self, chat_id, message_id):
-                    self.chat_id = chat_id
-                    self.message_id = message_id
-                    
-                async def reply_text(self, text, **kwargs):
-                    return await context.bot.send_message(
-                        chat_id=self.chat_id,
-                        text=text,
-                        **kwargs
-                    )
-            
-            def __init__(self, message, user):
-                self.message = message
-                self.effective_user = user
-        
-        fake_message = FakeUpdate.FakeMessage(query.message.chat_id, query.message.message_id)
-        fake_update = FakeUpdate(fake_message, query.from_user)
-        await show_main_menu(fake_update, context)
+        await show_main_menu(create_fake_update(), context)
         return
     
+    # Obsługa callbacków języka przy pierwszym uruchomieniu
+    elif query.data.startswith("start_lang_"):
+        from handlers.start_handler import handle_language_selection
+        await handle_language_selection(update, context)
+    
     # Obsługa wybrania modelu
-    if query.data.startswith("model_"):
+    elif query.data.startswith("model_"):
         model_id = query.data[6:]  # Pobierz ID modelu (usuń prefix "model_")
         await handle_model_selection(update, context, model_id)
     
@@ -555,13 +576,21 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     elif query.data.startswith("buy_") or query.data == "buy_credits":
         await handle_credit_callback(update, context)
     
-    # Obsługa callbacków języka przy pierwszym uruchomieniu
-    elif query.data.startswith("start_lang_"):
-        await handle_language_selection(update, context)
-    
     # Obsługa innych callbacków (ustawienia, historia itp.)
     elif query.data.startswith("settings_") or query.data.startswith("lang_") or query.data.startswith("history_"):
         await handle_settings_callback(update, context)
+    
+    # Obsługa przycisków tematów konwersacji
+    elif query.data.startswith("theme_") or query.data == "new_theme" or query.data == "no_theme":
+        await handle_theme_callback(update, context)
+    
+    # Obsługa przycisków przypomnień
+    elif query.data.startswith("reminder_") or query.data == "new_reminder":
+        await handle_reminder_callback(update, context)
+    
+    # Obsługa przycisków notatek
+    elif query.data.startswith("note_") or query.data == "new_note":
+        await handle_note_callback(update, context)
 
 async def handle_model_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, model_id):
     """Obsługa wyboru modelu AI"""
@@ -723,7 +752,6 @@ Nazwa użytkownika: {user.get('username', 'Brak')}
 Imię: {user.get('first_name', 'Brak')}
 Nazwisko: {user.get('last_name', 'Brak')}
 Język: {user.get('language_code', 'Brak')}
-Język interfejsu: {user.get('language', 'pl')}
 Subskrypcja do: {subscription_end}
 Aktywny: {'Tak' if user.get('is_active', False) else 'Nie'}
 Data rejestracji: {user.get('created_at', 'Brak')}
@@ -734,12 +762,42 @@ Dostępne kredyty: *{credits}*
     
     await update.message.reply_text(info, parse_mode=ParseMode.MARKDOWN)
 
-# Główna funkcja uruchamiająca bota
+# Definicja funkcji onboarding
+async def onboarding_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Wyświetla przewodnik po możliwościach bota
+    Użycie: /onboarding
+    """
+    user_id = update.effective_user.id
+    language = get_user_language(context, user_id)
+    
+    # Przygotuj wiadomość onboardingową
+    message = f"🚀 *Poznaj możliwości bota {BOT_NAME}!*\n\n"
+    message += "Cześć! Jestem Twoim osobistym asystentem AI. Oto co potrafię:\n\n"
+    message += "💬 **Czat z AI** - Możesz ze mną rozmawiać o wszystkim. Odpowiem na pytania, pomogę w pisaniu tekstów, wyjaśnię trudne koncepcje i wiele więcej.\n\n"
+    message += "🔄 **Tryby czatu** - Mam różne tryby specjalizacji: programista, kreatywny pisarz, asystent biznesowy, psycholog i wiele innych. Użyj /mode aby wybrać.\n\n"
+    message += "🖼️ **Generowanie obrazów** - Mogę tworzyć obrazy na podstawie Twoich opisów. Użyj komendy /image a następnie opisz, co chcesz zobaczyć.\n\n"
+    message += "📂 **Tematy konwersacji** - Użyj /theme aby organizować nasze rozmowy w oddzielne tematy, np. jeden do nauki, drugi do pracy.\n\n"
+    message += "⏰ **Przypomnienia** - Mogę ustawić dla Ciebie przypomnienia. Spróbuj np. /remind 30m zadzwonić do klienta\n\n"
+    message += "📝 **Notatki** - Zapisuj ważne informacje za pomocą komendy /note.\n\n"
+    message += "💰 **System kredytów** - Do korzystania z moich funkcji potrzebujesz kredytów. Sprawdź stan komendą /credits, a kupisz więcej przez /buy.\n\n"
+    message += "Jak mogę Ci pomóc dzisiaj? Możesz po prostu wpisać swoje pytanie lub użyć jednej z komend."
+    
+    await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
 
+# Obsługa błędów
+def error_handler(update, context):
+    """Log the error and send a telegram message to notify the developer."""
+    import traceback
+    logger.error(f"Exception while handling an update: {context.error}")
+    tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
+    tb_string = "".join(tb_list)
+    logger.error(tb_string)
+
+# Główna funkcja uruchamiająca bota
 def main():
     """Funkcja uruchamiająca bota"""
-    # Inicjalizacja aplikacji
-        # Dodaj te linie na początku funkcji main() dla debugowania
+    # Dodaj te linie na początku funkcji main() dla debugowania
     print(f"TELEGRAM_TOKEN = {TELEGRAM_TOKEN}")
     
     if not TELEGRAM_TOKEN or TELEGRAM_TOKEN == "None":
@@ -749,8 +807,6 @@ def main():
         return
         
     # Inicjalizacja aplikacji
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
-    # ... reszta kodu ...
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
     # Dodanie handlerów komend
@@ -763,6 +819,7 @@ def main():
     application.add_handler(CommandHandler("restart", restart_command))
     application.add_handler(CommandHandler("menu", menu_command))
     application.add_handler(CommandHandler("setname", set_user_name))
+    application.add_handler(CommandHandler("onboarding", onboarding_command))
     
     # Dodanie handlerów kodów aktywacyjnych
     application.add_handler(CommandHandler("code", code_command))
@@ -777,16 +834,6 @@ def main():
     application.add_handler(CommandHandler("addcredits", add_credits_admin))
     application.add_handler(CommandHandler("userinfo", get_user_info))
     
-    # Dodanie handlerów dokumentów i zdjęć
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    
-    # Dodanie handlera zapytań zwrotnych (z przycisków)
-    application.add_handler(CallbackQueryHandler(handle_callback_query))
-    
-    # Dodanie handlera wiadomości tekstowych (musi być na końcu)
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
-
     # W funkcji main(), po istniejących handlerach dodaj:
     application.add_handler(CommandHandler("export", export_conversation))
 
@@ -799,9 +846,19 @@ def main():
     application.add_handler(CommandHandler("reminders", reminders_command))
     application.add_handler(CommandHandler("note", note_command))
     application.add_handler(CommandHandler("notes", notes_command))
+    
+    # Dodanie handlerów dokumentów i zdjęć
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    
+    # Dodanie handlera zapytań zwrotnych (z przycisków)
+    application.add_handler(CallbackQueryHandler(handle_callback_query))
+    
+    # Dodanie handlera wiadomości tekstowych (musi być na końcu)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
 
-    # Handler rozszerzonego monitorowania kredytów
-    application.add_handler(CommandHandler("creditstats", credit_stats_command))
+    # Dodaj obsługę błędów
+    application.add_error_handler(error_handler)
 
     # Uruchom cykliczne sprawdzanie przypomnień
     job_queue = application.job_queue
